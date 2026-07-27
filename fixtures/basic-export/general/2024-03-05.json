@@ -1,0 +1,63 @@
+[
+  {
+    "type": "message",
+    "ts": "1709631700.000800",
+    "user": "U024BE7LH",
+    "text": "Notes attached.",
+    "files": [
+      {
+        "id": "F0NOTES",
+        "name": "postmortem.md",
+        "mimetype": "text/markdown",
+        "size": 2048,
+        "url_private": "https://files.slack.test/files-pri/T0TEAM-F0NOTES/postmortem.md",
+        "permalink": "https://acme.slack.test/files/U024BE7LH/F0NOTES/postmortem.md",
+        "mode": "hosted",
+        "is_external": false
+      },
+      {
+        "id": "F0GONE",
+        "name": "screenshot.png",
+        "mimetype": "image/png",
+        "size": 91234,
+        "url_private": "https://files.slack.test/files-pri/T0TEAM-F0GONE/screenshot.png",
+        "mode": "file_deleted",
+        "is_external": false
+      }
+    ]
+  },
+  {
+    "type": "message",
+    "subtype": "bot_message",
+    "ts": "1709631800.000900",
+    "bot_id": "B0CI",
+    "username": "CI",
+    "text": "Build <https://ci.test/build/43|#43> passed in 4m12s"
+  },
+  {
+    "type": "message",
+    "ts": "1709631900.001000",
+    "user": "U0BOB",
+    "text": "Updated the runbook (fixed a typo)",
+    "edited": { "user": "U0BOB", "ts": "1709632000.000000" }
+  },
+  {
+    "type": "message",
+    "subtype": "channel_topic",
+    "ts": "1709632100.001100",
+    "user": "U0ALICE",
+    "text": "<@U0ALICE> set the channel topic: Company-wide announcements",
+    "topic": "Company-wide announcements"
+  },
+  {
+    "type": "message",
+    "ts": "1709632200.001200",
+    "user": "U0GONE",
+    "text": "Handing over before my last day. Docs are in &lt;the shared drive&gt;."
+  },
+  {
+    "type": "message",
+    "text": "this message has no ts and must be counted as skipped",
+    "user": "U0BOB"
+  }
+]

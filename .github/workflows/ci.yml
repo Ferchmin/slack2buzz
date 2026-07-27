@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Hermit pins the toolchain, so CI and local builds agree by
+      # construction rather than by two lists that drift apart.
+      - uses: cashapp/activate-hermit@v1
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo test --all-features
+
+      # The golden files must match a fresh run. If regenerating changes
+      # anything, the committed files are stale and the diff was never reviewed.
+      - name: golden files are current
+        run: |
+          UPDATE_GOLDEN=1 cargo test --test golden
+          git diff --exit-code tests/golden || {
+            echo "::error::golden files are stale — run 'just update-golden' and commit the reviewed diff"
+            exit 1
+          }

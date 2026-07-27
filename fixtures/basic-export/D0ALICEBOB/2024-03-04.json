@@ -1,0 +1,14 @@
+[
+  {
+    "type": "message",
+    "ts": "1709546000.000100",
+    "user": "U0ALICE",
+    "text": "Are you joining the retro?"
+  },
+  {
+    "type": "message",
+    "ts": "1709546100.000200",
+    "user": "U0BOB",
+    "text": "Yes — mailing you the notes at <mailto:bob@acme.test|bob@acme.test>"
+  }
+]

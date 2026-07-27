@@ -1,0 +1,14 @@
+[
+  {
+    "type": "message",
+    "ts": "1709545000.000100",
+    "user": "U024BE7LH",
+    "text": "Private channel, so this should only import if the operator selects it."
+  },
+  {
+    "type": "message",
+    "ts": "1709545100.000200",
+    "user": "U0BOB",
+    "text": "Agreed. Also `2 * 3 * 4` should not become bold."
+  }
+]

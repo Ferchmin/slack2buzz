@@ -1,0 +1,57 @@
+[
+  {
+    "id": "U0ALICE",
+    "name": "alice",
+    "deleted": false,
+    "is_bot": false,
+    "tz": "Europe/Warsaw",
+    "profile": {
+      "real_name": "Alice Anderson",
+      "display_name": "alice",
+      "image_192": "https://avatars.slack-edge.test/U0ALICE_192.png",
+      "image_512": "https://avatars.slack-edge.test/U0ALICE_512.png"
+    }
+  },
+  {
+    "id": "U024BE7LH",
+    "name": "pawel",
+    "deleted": false,
+    "is_bot": false,
+    "tz": "Europe/Warsaw",
+    "profile": {
+      "real_name": "Paweł Zieliński",
+      "display_name": "",
+      "image_192": "https://avatars.slack-edge.test/U024BE7LH_192.png"
+    }
+  },
+  {
+    "id": "U0BOB",
+    "name": "bob",
+    "deleted": false,
+    "is_bot": false,
+    "profile": {
+      "real_name": "Bob Brown",
+      "display_name": "bob"
+    }
+  },
+  {
+    "id": "U0GONE",
+    "name": "former.contractor",
+    "deleted": true,
+    "is_bot": false,
+    "profile": {
+      "real_name": "Former Contractor",
+      "display_name": "former.contractor"
+    }
+  },
+  {
+    "id": "U0BUILDBOT",
+    "name": "buildbot",
+    "deleted": false,
+    "is_bot": true,
+    "profile": {
+      "real_name": "Build Bot",
+      "display_name": "buildbot"
+    }
+  }
+]

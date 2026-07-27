@@ -1,0 +1,55 @@
+[
+  {
+    "type": "message",
+    "subtype": "channel_join",
+    "ts": "1709545200.000100",
+    "user": "U0ALICE",
+    "text": "<@U0ALICE> has joined the channel"
+  },
+  {
+    "type": "message",
+    "subtype": "channel_join",
+    "ts": "1709545260.000200",
+    "user": "U0BOB",
+    "text": "<@U0BOB> has joined the channel"
+  },
+  {
+    "type": "message",
+    "ts": "1709545300.000300",
+    "user": "U0ALICE",
+    "text": "Morning all"
+  },
+  {
+    "type": "message",
+    "ts": "1709545400.000400",
+    "user": "U0ALICE",
+    "text": "Heads up <@U024BE7LH> — the *deploy* is blocked, see <#C0ENGPRIV|eng-private> and <https://ci.test/build/42|build 42>. Ping <!here> if urgent. Cost is 5 &amp; rising; if (a &lt; b) we retry.",
+    "reactions": [
+      { "name": "eyes", "users": ["U024BE7LH", "U0BOB"], "count": 2 },
+      { "name": "custom-parrot", "users": ["U0BOB"], "count": 1 }
+    ]
+  },
+  {
+    "type": "message",
+    "ts": "1709545500.000500",
+    "user": "U024BE7LH",
+    "text": "Taking a look. Root cause thread below.",
+    "thread_ts": "1709545500.000500",
+    "reply_count": 2
+  },
+  {
+    "type": "message",
+    "ts": "1709545560.000600",
+    "user": "U024BE7LH",
+    "text": "It is the `*_test.rs` glob — it matches `*ptr` too. Repro:\n```\nif (a &lt; b) *x = 1;\n```",
+    "thread_ts": "1709545500.000500"
+  },
+  {
+    "type": "message",
+    "ts": "1709545620.000700",
+    "user": "U0BOB",
+    "text": "Nice find ~blaming the linker~ was wrong then",
+    "thread_ts": "1709545500.000500",
+    "reactions": [{ "name": "thumbsup", "users": ["U0ALICE"], "count": 1 }]
+  }
+]

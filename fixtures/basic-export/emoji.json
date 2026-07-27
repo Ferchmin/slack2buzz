@@ -1,0 +1,5 @@
+{
+  "custom-parrot": "https://emoji.slack-edge.test/T0TEAM/custom-parrot/abc123.gif",
+  "shipit-squirrel": "https://emoji.slack-edge.test/T0TEAM/shipit-squirrel/def456.png",
+  "yolo": "alias:custom-parrot"
+}
