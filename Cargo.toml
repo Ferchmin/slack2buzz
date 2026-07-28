@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.88.0"
 license = "Apache-2.0"
 description = "Import Slack workspace history into a Buzz community as a signed archive."
-repository = "https://github.com/pawelz/slack2buzz"
+repository = "https://github.com/Ferchmin/slack2buzz"
 
 [dependencies]
 anyhow = "1.0"

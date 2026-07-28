@@ -82,7 +82,7 @@ The toolchain is pinned with [Hermit](https://cashapp.github.io/hermit/); no
 global Rust install is needed.
 
 ```bash
-git clone https://github.com/pawelz/slack2buzz && cd slack2buzz
+git clone https://github.com/Ferchmin/slack2buzz && cd slack2buzz
 . ./bin/activate-hermit
 just build
 ```
