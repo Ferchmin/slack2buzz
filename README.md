@@ -244,7 +244,7 @@ See [DESIGN.md](DESIGN.md) for the identity, threading and ledger design, and
 
 ## Contributing
 
-`just ci` before opening a PR. Same conventions as Buzz: `thiserror` in
+`just check` before opening a PR. Same conventions as Buzz: `thiserror` in
 libraries, `anyhow` in binaries, no `unwrap` outside tests, structured
 `tracing`, Conventional Commits.
 

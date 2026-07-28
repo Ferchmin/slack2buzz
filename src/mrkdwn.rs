@@ -333,8 +333,6 @@ fn decode_entities(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     fn resolver() -> Resolver {

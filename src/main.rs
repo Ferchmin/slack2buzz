@@ -11,16 +11,10 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
+use slack2buzz::error::exit;
 use slack2buzz::export::Export;
 use slack2buzz::ir::ChannelKind;
 use slack2buzz::{fmt, invite, parse, probe, selection};
-
-/// Exit codes, mirroring Buzz's CLI.
-mod exit {
-    pub const OK: i32 = 0;
-    pub const INPUT: i32 = 1;
-    pub const OTHER: i32 = 4;
-}
 
 #[derive(Parser)]
 #[command(
@@ -169,30 +163,16 @@ fn main() {
     std::process::exit(code);
 }
 
-/// Map an error to an exit code. Anything about the export or the operator's
-/// flags is input; everything else is `OTHER` until there is a network stage to
-/// distinguish.
+/// Map an error to an exit code.
+///
+/// Library failures carry their own classification, so this only has to unwrap
+/// the `anyhow` envelope. An unclassifiable error (only possible from this file)
+/// falls back to `OTHER`. This replaced a list of message substrings, which
+/// silently reclassified an error whenever someone reworded it.
 fn classify(error: &anyhow::Error) -> i32 {
-    let text = error.to_string();
-    let input_shaped = [
-        "no channels selected",
-        "no channel in this export matches",
-        "matched no conversations",
-        "nothing selected",
-        "contains no conversations",
-        // invite
-        "no one in this import matches",
-        "nobody selected",
-        "contains no user records",
-        "no invitable people",
-    ];
-    if input_shaped.iter().any(|m| text.contains(m))
-        || error.downcast_ref::<std::io::Error>().is_some()
-    {
-        exit::INPUT
-    } else {
-        exit::OTHER
-    }
+    error
+        .downcast_ref::<slack2buzz::Error>()
+        .map_or(exit::OTHER, slack2buzz::Error::exit_code)
 }
 
 fn run(cli: Cli) -> Result<()> {
@@ -251,9 +231,7 @@ fn run(cli: Cli) -> Result<()> {
             // Never fall back to "everything" — see the selection module docs.
             if filter.is_empty() {
                 if no_input || !std::io::stdin().is_terminal() {
-                    anyhow::bail!(
-                        "no channels selected: pass --all, --all-public or --channels <names>"
-                    );
+                    return Err(slack2buzz::Error::NoChannelsSelected.into());
                 }
                 print_inventory(&inventory);
                 filter = selection::prompt(&inventory)?;
@@ -308,7 +286,10 @@ fn run(cli: Cli) -> Result<()> {
             let records = invite::load_ir(&ir)?;
             let people = invite::candidates(&records);
             if people.is_empty() {
-                anyhow::bail!("{} contains no user records", ir.display());
+                return Err(slack2buzz::Error::NoUserRecords {
+                    path: ir.display().to_string(),
+                }
+                .into());
             }
 
             if list {
@@ -413,13 +394,14 @@ fn run(cli: Cli) -> Result<()> {
             // Live senders are not implemented. Refusing is the only honest
             // option: silently dry-running when the operator asked to execute
             // would be worse than failing.
-            anyhow::bail!(
+            Err(slack2buzz::Error::NotImplemented(format!(
                 "--execute is not implemented yet: the live Slack and Buzz clients \
-                 (chat.postMessage and NIP-98-signed POST /api/invites) are still \
-                 to be written. The plan above is what it will send. Nothing was \
-                 sent and {} was not modified.",
+                 (chat.postMessage and NIP-98-signed POST /api/invites) are still to \
+                 be written. The plan above is what it will send. Nothing was sent \
+                 and {} was not modified.",
                 ledger_path.display()
-            )
+            ))
+            .into())
         }
     }
 }

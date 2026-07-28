@@ -32,7 +32,7 @@ pub mod slack;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{bail, Result};
+use crate::error::{Error, Result};
 
 use crate::ir::Record;
 
@@ -301,10 +301,12 @@ fn resolve_selectors(
             .collect();
 
         match matches.len() {
-            0 => bail!(
-                "no one in this import matches {flag} \"{selector}\" — \
-                 run `slack2buzz invite --list` to see the candidates"
-            ),
+            0 => {
+                return Err(Error::UnknownPerson {
+                    flag: flag.to_string(),
+                    selector: selector.clone(),
+                })
+            }
             _ => out.extend(matches.into_iter().map(|p| p.slack_id.clone())),
         }
     }
@@ -314,14 +316,17 @@ fn resolve_selectors(
 /// Load an `import.jsonl` into records.
 pub fn load_ir(path: &std::path::Path) -> Result<Vec<Record>> {
     let text = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("reading {}: {e}", path.display()))?;
+        .map_err(|e| Error::io(format!("reading {}", path.display()), e))?;
     let mut records = Vec::new();
     for (i, line) in text.lines().enumerate() {
         if line.trim().is_empty() {
             continue;
         }
-        let record: Record = serde_json::from_str(line)
-            .map_err(|e| anyhow::anyhow!("{}:{}: {e}", path.display(), i + 1))?;
+        let record: Record = serde_json::from_str(line).map_err(|e| Error::MalformedIr {
+            path: path.display().to_string(),
+            line: i + 1,
+            source: e,
+        })?;
         records.push(record);
     }
     Ok(records)
@@ -385,7 +390,7 @@ pub fn prompt(people: &[Person]) -> Result<PersonFilter> {
         .filter(|p| p.hard_excluded().is_none())
         .collect();
     if offerable.is_empty() {
-        bail!("no invitable people in this import (all bots or deactivated)");
+        return Err(Error::NoInvitablePeople);
     }
 
     let preselected: BTreeSet<String> = if preset == 3 {
@@ -418,7 +423,7 @@ pub fn prompt(people: &[Person]) -> Result<PersonFilter> {
         .interact()?;
 
     if picked.is_empty() {
-        bail!("nobody selected");
+        return Err(Error::NobodySelected);
     }
 
     Ok(PersonFilter {
@@ -486,10 +491,10 @@ pub fn execute(
     // Fail before the first DM, not after the fortieth.
     let role = minter.role()?;
     if !role.can_mint() {
-        bail!(
-            "this key holds role {role:?} in {community}; only owners and admins \
-             can mint invites"
-        );
+        return Err(Error::InsufficientRole {
+            role: format!("{role:?}").to_lowercase(),
+            community: community.to_string(),
+        });
     }
 
     let mut outcome = Outcome::default();
@@ -560,9 +565,6 @@ pub fn execute(
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
-
     use super::*;
     use crate::export::Export;
     use crate::parse::{self, Options};

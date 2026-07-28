@@ -261,8 +261,6 @@ pub fn ts_to_unix_secs(ts: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     #[test]

@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use crate::error::{Error, Result};
 
 /// An opened Slack export.
 #[derive(Debug)]
@@ -38,9 +38,11 @@ impl Export {
         }
 
         let file = std::fs::File::open(path)
-            .with_context(|| format!("opening export {}", path.display()))?;
-        let archive = zip::ZipArchive::new(file)
-            .with_context(|| format!("reading {} as a zip archive", path.display()))?;
+            .map_err(|e| Error::io(format!("opening export {}", path.display()), e))?;
+        let archive = zip::ZipArchive::new(file).map_err(|e| Error::Zip {
+            path: path.display().to_string(),
+            source: e,
+        })?;
 
         let raw: Vec<String> = archive.file_names().map(str::to_string).collect();
         let prefix = detect_prefix(&raw);
@@ -68,8 +70,10 @@ impl Export {
         let Some(bytes) = self.read_bytes(name)? else {
             return Ok(None);
         };
-        let value = serde_json::from_slice(&bytes)
-            .with_context(|| format!("parsing {name} from the export"))?;
+        let value = serde_json::from_slice(&bytes).map_err(|e| Error::Json {
+            what: name.to_string(),
+            source: e,
+        })?;
         Ok(Some(value))
     }
 
@@ -80,8 +84,8 @@ impl Export {
                 if !path.is_file() {
                     return Ok(None);
                 }
-                let bytes =
-                    std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+                let bytes = std::fs::read(&path)
+                    .map_err(|e| Error::io(format!("reading {}", path.display()), e))?;
                 Ok(Some(bytes))
             }
             Self::Zip {
@@ -91,12 +95,17 @@ impl Export {
                 let mut entry = match archive.by_name(&full) {
                     Ok(e) => e,
                     Err(zip::result::ZipError::FileNotFound) => return Ok(None),
-                    Err(e) => return Err(e).with_context(|| format!("reading {name} from zip")),
+                    Err(e) => {
+                        return Err(Error::Zip {
+                            path: name.to_string(),
+                            source: e,
+                        })
+                    }
                 };
                 let mut buf = Vec::with_capacity(entry.size() as usize);
                 entry
                     .read_to_end(&mut buf)
-                    .with_context(|| format!("reading {name} from zip"))?;
+                    .map_err(|e| Error::io(format!("reading {name} from zip"), e))?;
                 Ok(Some(buf))
             }
         }
@@ -113,10 +122,10 @@ impl Export {
                     return Ok(Vec::new());
                 }
                 let mut days = BTreeSet::new();
-                for entry in
-                    std::fs::read_dir(&dir).with_context(|| format!("listing {}", dir.display()))?
+                for entry in std::fs::read_dir(&dir)
+                    .map_err(|e| Error::io(format!("listing {}", dir.display()), e))?
                 {
-                    let entry = entry?;
+                    let entry = entry.map_err(|e| Error::io("reading a directory entry", e))?;
                     let name = entry.file_name().to_string_lossy().to_string();
                     if name.ends_with(".json") {
                         days.insert(format!("{channel_dir}/{name}"));
@@ -148,10 +157,13 @@ impl Export {
             Self::Dir { root } => {
                 let mut dirs = BTreeSet::new();
                 for entry in std::fs::read_dir(root)
-                    .with_context(|| format!("listing {}", root.display()))?
+                    .map_err(|e| Error::io(format!("listing {}", root.display()), e))?
                 {
-                    let entry = entry?;
-                    if entry.file_type()?.is_dir() {
+                    let entry = entry.map_err(|e| Error::io("reading a directory entry", e))?;
+                    let file_type = entry
+                        .file_type()
+                        .map_err(|e| Error::io("reading a directory entry type", e))?;
+                    if file_type.is_dir() {
                         dirs.insert(entry.file_name().to_string_lossy().to_string());
                     }
                 }
@@ -206,8 +218,6 @@ fn detect_prefix(names: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     #[test]

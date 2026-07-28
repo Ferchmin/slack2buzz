@@ -15,8 +15,6 @@
 //! Never regenerate without reading the diff. The whole value of these files
 //! is that a human looked at what changed.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
 use std::path::Path;
 
 use slack2buzz::export::Export;

@@ -12,8 +12,6 @@
 //! directory path is already pinned by the golden files, so agreement with it
 //! transitively pins the zip path to the same spec.
 
-#![allow(clippy::unwrap_used, clippy::expect_used)]
-
 use std::io::Write;
 use std::path::{Path, PathBuf};
 

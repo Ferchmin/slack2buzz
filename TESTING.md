@@ -3,12 +3,12 @@
 ## What runs today
 
 ```bash
-just ci          # fmt-check, clippy -D warnings, tests, golden freshness
+just check       # fmt-check, clippy -D warnings, tests, golden freshness
 just test        # tests only
 just update-golden && git diff tests/golden   # review an intentional IR change
 ```
 
-135 tests. Three layers:
+140 tests. Three layers:
 
 | Layer | Where | What it pins |
 |---|---|---|
@@ -22,7 +22,7 @@ to assert.
 
 ## What is *not* tested, in priority order
 
-Being explicit, because "135 tests passing" invites more confidence than is
+Being explicit, because "140 tests passing" invites more confidence than is
 earned. The fixture is synthetic and written by the same person who wrote the
 parser, so it only covers cases that were imagined.
 

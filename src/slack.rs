@@ -204,8 +204,6 @@ pub fn is_join_leave(subtype: Option<&str>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
 
     fn user_json(json: &str) -> SlackUser {

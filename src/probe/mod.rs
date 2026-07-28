@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Context, Result};
+use crate::error::Result;
 
 use crate::export::Export;
 use crate::ir::{ts_to_unix_secs, ChannelKind};
@@ -122,8 +122,7 @@ pub fn probe(export: &mut Export, keep_joins: bool) -> Result<Inventory> {
     let mut warnings = Vec::new();
 
     let users: Vec<SlackUser> = export
-        .read_json::<Vec<SlackUser>>("users.json")
-        .context("reading users.json")?
+        .read_json::<Vec<SlackUser>>("users.json")?
         .unwrap_or_else(|| {
             warnings.push(
                 "users.json is missing — messages will be attributed to raw Slack ids".to_string(),
@@ -144,10 +143,7 @@ pub fn probe(export: &mut Export, keep_joins: bool) -> Result<Inventory> {
     let mut present_kinds = Vec::new();
 
     for (manifest, kind) in MANIFESTS {
-        let Some(entries) = export
-            .read_json::<Vec<SlackConversation>>(manifest)
-            .with_context(|| format!("reading {manifest}"))?
-        else {
+        let Some(entries) = export.read_json::<Vec<SlackConversation>>(manifest)? else {
             continue;
         };
         if entries.is_empty() {
@@ -300,8 +296,6 @@ fn tally_conversation(
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use std::path::Path;
 

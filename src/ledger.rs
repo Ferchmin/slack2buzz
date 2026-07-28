@@ -21,7 +21,7 @@
 //! - `invites` — `slack_user_id → invite code, DM outcome`. Stops a resumed run
 //!   from DMing the same person twice.
 
-use anyhow::{Context, Result};
+use crate::error::{Error, Result};
 use rusqlite::{Connection, OptionalExtension};
 
 /// How far a record got. Recorded rather than inferred so a resumed run can
@@ -89,14 +89,19 @@ pub struct Ledger {
 impl Ledger {
     /// Open (creating if needed) a ledger at `path`.
     pub fn open(path: &std::path::Path) -> Result<Self> {
-        let conn =
-            Connection::open(path).with_context(|| format!("opening ledger {}", path.display()))?;
+        let conn = Connection::open(path).map_err(|e| Error::Ledger {
+            context: format!("opening ledger {}", path.display()),
+            source: e,
+        })?;
         Self::init(conn)
     }
 
     /// An in-memory ledger, for tests and `--dry-run`.
     pub fn in_memory() -> Result<Self> {
-        Self::init(Connection::open_in_memory()?)
+        Self::init(Connection::open_in_memory().map_err(|e| Error::Ledger {
+            context: "opening an in-memory ledger".into(),
+            source: e,
+        })?)
     }
 
     fn init(conn: Connection) -> Result<Self> {
@@ -135,7 +140,10 @@ impl Ledger {
             );
             "#,
         )
-        .context("creating ledger schema")?;
+        .map_err(|e| Error::Ledger {
+            context: "creating ledger schema".into(),
+            source: e,
+        })?;
 
         Ok(Self { conn })
     }
@@ -188,7 +196,10 @@ impl Ledger {
                     now,
                 ],
             )
-            .with_context(|| format!("recording invite for {slack_user_id}"))?;
+            .map_err(|e| Error::Ledger {
+                context: format!("recording invite for {slack_user_id}"),
+                source: e,
+            })?;
         Ok(())
     }
 
@@ -209,7 +220,10 @@ impl Ledger {
                 },
             )
             .optional()
-            .with_context(|| format!("reading invite for {slack_user_id}"))?;
+            .map_err(|e| Error::Ledger {
+                context: format!("reading invite for {slack_user_id}"),
+                source: e,
+            })?;
 
         Ok(
             row.map(|(state, invite_url, expires_at, error)| InviteRecord {
@@ -269,7 +283,10 @@ impl Ledger {
                     now
                 ],
             )
-            .with_context(|| format!("recording event {channel_slack_id}/{slack_ts}"))?;
+            .map_err(|e| Error::Ledger {
+                context: format!("recording event {channel_slack_id}/{slack_ts}"),
+                source: e,
+            })?;
         Ok(())
     }
 
@@ -288,7 +305,10 @@ impl Ledger {
                 |row| row.get::<_, Option<String>>(0),
             )
             .optional()
-            .context("reading thread map")?;
+            .map_err(|e| Error::Ledger {
+                context: "reading thread map".into(),
+                source: e,
+            })?;
         Ok(id.flatten())
     }
 
@@ -301,7 +321,10 @@ impl Ledger {
                 |row| row.get::<_, String>(0),
             )
             .optional()
-            .context("reading event state")?;
+            .map_err(|e| Error::Ledger {
+                context: "reading event state".into(),
+                source: e,
+            })?;
         Ok(state
             .and_then(|s| State::parse(&s))
             .is_some_and(State::is_done))
@@ -332,9 +355,6 @@ impl Ledger {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
-
     use super::*;
 
     fn ledger() -> Ledger {

@@ -14,7 +14,7 @@
 //! Required token scopes: `chat:write` (and `im:write` on some app
 //! configurations). Notably *not* `users:read.email`.
 
-use anyhow::Result;
+use crate::error::Result;
 
 /// Where a sent DM landed, for the ledger.
 #[derive(Debug, Clone, PartialEq)]
@@ -68,7 +68,7 @@ pub struct FlakyMessenger {
 impl Messenger for FlakyMessenger {
     fn send_dm(&mut self, slack_user_id: &str, _body: &str) -> Result<SentDm> {
         if self.fail_for.iter().any(|f| f == slack_user_id) {
-            anyhow::bail!("slack: ratelimited");
+            return Err(crate::Error::Slack("ratelimited".into()));
         }
         self.sent.push(slack_user_id.to_string());
         Ok(SentDm {
@@ -80,9 +80,6 @@ impl Messenger for FlakyMessenger {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
-
     use super::*;
 
     #[test]

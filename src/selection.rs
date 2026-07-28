@@ -18,7 +18,7 @@
 
 use std::collections::BTreeSet;
 
-use anyhow::{bail, Result};
+use crate::error::{Error, Result};
 
 use crate::ir::ChannelKind;
 use crate::probe::Inventory;
@@ -86,10 +86,7 @@ pub struct Resolved {
 /// mean the operator asked for something they are not going to get.
 pub fn resolve(inventory: &Inventory, filter: &Filter) -> Result<Resolved> {
     if filter.is_empty() {
-        bail!(
-            "no channels selected: pass --all, --all-public, --channels <names>, \
-             or run without --no-input to choose interactively"
-        );
+        return Err(Error::NoChannelsSelected);
     }
 
     let mut chosen: BTreeSet<String> = BTreeSet::new();
@@ -112,10 +109,9 @@ pub fn resolve(inventory: &Inventory, filter: &Filter) -> Result<Resolved> {
     for selector in &filter.include {
         let matches = match_selector(inventory, selector);
         if matches.is_empty() {
-            bail!(
-                "no channel in this export matches \"{selector}\" — \
-                 run `slack2buzz probe` to list what is available"
-            );
+            return Err(Error::UnknownChannel {
+                selector: selector.clone(),
+            });
         }
         explicit.extend(matches);
     }
@@ -124,7 +120,9 @@ pub fn resolve(inventory: &Inventory, filter: &Filter) -> Result<Resolved> {
     for selector in &filter.exclude {
         let matches = match_selector(inventory, selector);
         if matches.is_empty() {
-            bail!("no channel in this export matches --exclude \"{selector}\"");
+            return Err(Error::UnknownExcludedChannel {
+                selector: selector.clone(),
+            });
         }
         for id in matches {
             chosen.remove(&id);
@@ -146,7 +144,7 @@ pub fn resolve(inventory: &Inventory, filter: &Filter) -> Result<Resolved> {
         .collect();
 
     if selected.is_empty() {
-        bail!("the selection matched no conversations with messages to import");
+        return Err(Error::NoConversationsMatched);
     }
 
     let skipped = inventory
@@ -189,7 +187,8 @@ pub fn parse_list(raw: &str) -> Vec<String> {
 
 /// Read one selector per line from a file, ignoring blanks and `#` comments.
 pub fn read_list_file(path: &std::path::Path) -> Result<Vec<String>> {
-    let text = std::fs::read_to_string(path)?;
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| Error::io(format!("reading {}", path.display()), e))?;
     Ok(text
         .lines()
         .map(str::trim)
@@ -241,7 +240,7 @@ pub fn prompt(inventory: &Inventory) -> Result<Filter> {
         .collect();
 
     if offerable.is_empty() {
-        bail!("this export contains no conversations with messages");
+        return Err(Error::NoConversations);
     }
 
     let preselected: BTreeSet<String> = match resolve(inventory, &seed) {
@@ -263,7 +262,7 @@ pub fn prompt(inventory: &Inventory) -> Result<Filter> {
         .interact()?;
 
     if picked.is_empty() {
-        bail!("nothing selected");
+        return Err(Error::NothingSelected);
     }
 
     Ok(Filter {
@@ -295,8 +294,6 @@ fn describe(c: &crate::probe::ConversationSummary) -> String {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use crate::export::Export;
     use std::path::Path;

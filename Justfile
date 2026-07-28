@@ -6,8 +6,8 @@
 _default:
     @just --list
 
-# Everything CI runs, in the order CI runs it.
-ci: fmt-check lint test
+# Everything CI runs, in the order CI runs it. Named to match Buzz's Justfile.
+check: fmt-check clippy test
 
 # Format the workspace.
 fmt:
@@ -17,7 +17,7 @@ fmt-check:
     cargo fmt --all -- --check
 
 # Clippy with warnings as errors, tests and all targets included.
-lint:
+clippy:
     cargo clippy --all-targets --all-features -- -D warnings
 
 test:

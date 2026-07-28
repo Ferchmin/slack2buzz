@@ -35,7 +35,7 @@
 //! Friday and a large fraction of the links die unused. `invite` therefore asks
 //! for a longer TTL explicitly rather than taking the default.
 
-use anyhow::Result;
+use crate::error::Result;
 
 /// Default TTL this tool requests: 14 days.
 ///
@@ -169,9 +169,6 @@ pub fn clamp_ttl(requested: u64) -> (u64, Option<String>) {
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
-
     use super::*;
 
     #[test]

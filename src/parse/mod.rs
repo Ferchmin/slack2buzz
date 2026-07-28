@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::io::Write;
 
-use anyhow::{Context, Result};
+use crate::error::{Error, Result};
 
 use crate::export::Export;
 use crate::ir::{self, ts_to_unix_secs, Record};
@@ -76,7 +76,7 @@ pub fn parse(
 
     for id in selected {
         let Some(summary) = inventory.conversations.iter().find(|c| &c.slack_id == id) else {
-            anyhow::bail!("selected conversation {id} is not in the inventory");
+            return Err(Error::UnknownSelectedConversation { id: id.clone() });
         };
 
         body.push(Record::Channel(ir::Channel {
@@ -128,14 +128,18 @@ pub fn parse(
     for record in &body {
         write_record(writer, record)?;
     }
-    writer.flush()?;
+    writer
+        .flush()
+        .map_err(|e| Error::io("flushing the IR", e))?;
 
     Ok(counts)
 }
 
 fn write_record(writer: &mut impl Write, record: &Record) -> Result<()> {
-    serde_json::to_writer(&mut *writer, record).context("serialising an IR record")?;
-    writer.write_all(b"\n")?;
+    serde_json::to_writer(&mut *writer, record).map_err(Error::Serialise)?;
+    writer
+        .write_all(b"\n")
+        .map_err(|e| Error::io("writing the IR", e))?;
     Ok(())
 }
 
@@ -283,8 +287,6 @@ fn parse_conversation(
 
 #[cfg(test)]
 mod tests {
-    // A panic IS the failure report in a test; Buzz's CONTRIBUTING allows it.
-    #![allow(clippy::unwrap_used, clippy::expect_used)]
     use super::*;
     use crate::selection::{self, Filter};
     use std::path::Path;
