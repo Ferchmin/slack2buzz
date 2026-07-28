@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 
 use slack2buzz::export::Export;
 use slack2buzz::ir::ChannelKind;
-use slack2buzz::{fmt, parse, probe, selection};
+use slack2buzz::{fmt, invite, parse, probe, selection};
 
 /// Exit codes, mirroring Buzz's CLI.
 mod exit {
@@ -93,6 +93,59 @@ enum Command {
         #[arg(long)]
         no_input: bool,
     },
+
+    /// DM Slack members a Buzz invite link. Sends nothing without `--execute`.
+    Invite {
+        /// The `import.jsonl` produced by `parse`. Its channels define who is
+        /// in scope.
+        ir: PathBuf,
+
+        /// Community name, used in the DM text.
+        #[arg(long)]
+        community: String,
+
+        /// Relay host, e.g. `acme.buzz.example`. Used to build invite URLs.
+        #[arg(long)]
+        relay: String,
+
+        /// Resume ledger. Delete it only if you want everyone re-invited.
+        #[arg(long, default_value = "ledger.sqlite")]
+        ledger: PathBuf,
+
+        /// List the candidates and their exclusion reasons, then exit.
+        #[arg(long)]
+        list: bool,
+
+        /// Everyone in the export, not just members of imported channels.
+        #[arg(long)]
+        everyone: bool,
+        /// Only people who authored a message in the imported channels.
+        #[arg(long)]
+        posters_only: bool,
+
+        /// Comma-separated handles or Slack ids. Repeatable.
+        #[arg(long, value_name = "NAMES")]
+        users: Vec<String>,
+        /// File with one handle or id per line; `#` comments allowed.
+        #[arg(long, value_name = "PATH")]
+        users_file: Option<PathBuf>,
+        /// Comma-separated people to drop from the selection.
+        #[arg(long, value_name = "NAMES")]
+        exclude_users: Vec<String>,
+
+        /// Invite lifetime in days. Buzz caps this at 30; its own default is 3,
+        /// which is usually too short for a bulk invite.
+        #[arg(long, default_value_t = 14)]
+        ttl_days: u64,
+
+        /// Actually mint invites and send DMs. Without this nothing is sent.
+        #[arg(long)]
+        execute: bool,
+
+        /// Never prompt. Requires an explicit selection flag.
+        #[arg(long)]
+        no_input: bool,
+    },
 }
 
 fn main() {
@@ -127,6 +180,11 @@ fn classify(error: &anyhow::Error) -> i32 {
         "matched no conversations",
         "nothing selected",
         "contains no conversations",
+        // invite
+        "no one in this import matches",
+        "nobody selected",
+        "contains no user records",
+        "no invitable people",
     ];
     if input_shaped.iter().any(|m| text.contains(m))
         || error.downcast_ref::<std::io::Error>().is_some()
@@ -231,7 +289,183 @@ fn run(cli: Cli) -> Result<()> {
             print_counts(&counts, &out);
             Ok(())
         }
+
+        Command::Invite {
+            ir,
+            community,
+            relay,
+            ledger: ledger_path,
+            list,
+            everyone,
+            posters_only,
+            users,
+            users_file,
+            exclude_users,
+            ttl_days,
+            execute,
+            no_input,
+        } => {
+            let records = invite::load_ir(&ir)?;
+            let people = invite::candidates(&records);
+            if people.is_empty() {
+                anyhow::bail!("{} contains no user records", ir.display());
+            }
+
+            if list {
+                print_candidates(&people);
+                return Ok(());
+            }
+
+            let mut include: Vec<String> = users
+                .iter()
+                .flat_map(|u| selection::parse_list(u))
+                .collect();
+            if let Some(path) = &users_file {
+                include.extend(
+                    selection::read_list_file(path)
+                        .with_context(|| format!("reading {}", path.display()))?,
+                );
+            }
+
+            let scope = if everyone {
+                invite::Scope::Everyone
+            } else if posters_only {
+                invite::Scope::PostersOnly
+            } else {
+                invite::Scope::ImportedChannelMembers
+            };
+
+            let explicit_scope = everyone || posters_only || !include.is_empty();
+            let mut filter = invite::PersonFilter {
+                scope,
+                include,
+                exclude: exclude_users
+                    .iter()
+                    .flat_map(|e| selection::parse_list(e))
+                    .collect(),
+            };
+
+            // Unlike `parse`, there IS a defensible default here (members of
+            // the imported channels), so a non-interactive run proceeds. But an
+            // interactive operator is still asked, because this messages people.
+            if !explicit_scope && !no_input && std::io::stdin().is_terminal() {
+                print_candidates(&people);
+                filter = invite::prompt(&people)?;
+            }
+
+            // Read existing progress so a dry run reflects a resumed run
+            // accurately — but never *create* the file just to read it, and
+            // never write to it outside `--execute`.
+            let already: std::collections::BTreeSet<String> = if ledger_path.is_file() {
+                let existing = slack2buzz::ledger::Ledger::open(&ledger_path)?;
+                existing
+                    .invites_by_state(slack2buzz::ledger::State::Sent)?
+                    .into_iter()
+                    .collect()
+            } else {
+                std::collections::BTreeSet::new()
+            };
+
+            let plan = invite::plan(&people, &filter, &already)?;
+            print_plan(&plan, &people);
+
+            if plan.is_empty() {
+                eprintln!("Nothing to do.");
+                return Ok(());
+            }
+
+            let (ttl_secs, warning) = invite::buzz::clamp_ttl(ttl_days * 24 * 60 * 60);
+            if let Some(w) = warning {
+                eprintln!("note: {w}");
+            }
+
+            if !execute {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let mut minter = invite::buzz::DryRunMinter::new(&relay).at(now);
+                let mut messenger = invite::slack::DryRunMessenger::default();
+                // Writes go to a throwaway ledger: a dry run must leave the
+                // real one byte-identical, including not creating it.
+                let scratch = slack2buzz::ledger::Ledger::in_memory()?;
+                invite::execute(
+                    &plan,
+                    &community,
+                    ttl_secs,
+                    &mut minter,
+                    &mut messenger,
+                    &scratch,
+                    0,
+                )?;
+
+                if let Some((_, body)) = messenger.sent.first() {
+                    println!("\n─── the DM each person would receive ───\n{body}\n───\n");
+                }
+                eprintln!(
+                    "DRY RUN: nothing was sent. {} would be DMed. \
+                     Re-run with --execute to send.",
+                    plan.len()
+                );
+                return Ok(());
+            }
+
+            // Live senders are not implemented. Refusing is the only honest
+            // option: silently dry-running when the operator asked to execute
+            // would be worse than failing.
+            anyhow::bail!(
+                "--execute is not implemented yet: the live Slack and Buzz clients \
+                 (chat.postMessage and NIP-98-signed POST /api/invites) are still \
+                 to be written. The plan above is what it will send. Nothing was \
+                 sent and {} was not modified.",
+                ledger_path.display()
+            )
+        }
     }
+}
+
+fn print_candidates(people: &[invite::Person]) {
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(out, "{} people in the import:\n", people.len());
+    for p in people {
+        let flags = if p.is_bot {
+            "  [bot]"
+        } else if p.is_deleted {
+            "  [deactivated]"
+        } else {
+            ""
+        };
+        let _ = writeln!(
+            out,
+            "  {:<24} @{:<18} {:>5} msgs  {} channels{}",
+            p.display_name,
+            p.name,
+            p.message_count,
+            p.channels.len(),
+            flags
+        );
+    }
+    let _ = writeln!(out);
+}
+
+fn print_plan(plan: &invite::Plan, people: &[invite::Person]) {
+    let mut out = std::io::stdout().lock();
+    let _ = writeln!(
+        out,
+        "Will invite {} of {}:",
+        plan.len(),
+        fmt::plural(people.len(), "person")
+    );
+    for r in &plan.recipients {
+        let _ = writeln!(out, "  {:<24} @{}", r.person.display_name, r.person.name);
+    }
+    if !plan.excluded.is_empty() {
+        let _ = writeln!(out, "\nNot inviting:");
+        for (reason, count) in plan.exclusion_counts() {
+            let _ = writeln!(out, "  {count:>4}  {reason}");
+        }
+    }
+    let _ = writeln!(out);
 }
 
 fn print_inventory(inventory: &probe::Inventory) {

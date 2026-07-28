@@ -52,7 +52,7 @@ built yet.
 | `probe` | Report what an export contains | **works** |
 | `parse` | Export → `import.jsonl` | **works** |
 | `emit` | `import.jsonl` → signed Buzz events | **blocked**, see below |
-| `invite` | Invite Slack members to the community | not started |
+| `invite` | DM Slack members a Buzz invite link | **plans and dry-runs**; `--execute` not wired |
 | `claim` | Let people attest to their own archived history | not started |
 
 ### `emit` is blocked upstream
@@ -148,6 +148,77 @@ Two behaviours worth knowing:
 
 Archived and empty channels are excluded unless you name them explicitly or
 pass `--include-archived` / `--include-empty`.
+
+## Inviting people
+
+`invite` works out who to DM from an `import.jsonl` and sends each of them a
+Buzz invite link. **It sends nothing without `--execute`**, and `--execute` is
+not wired up yet — the live Slack and Buzz clients are the remaining work. The
+planning, selection, dry-run and resume ledger are done and tested.
+
+```bash
+slack2buzz invite import.jsonl --community "Acme Eng" --relay acme.buzz.example
+```
+
+A dry run prints the exact recipient list, why everyone else was left out, and
+the verbatim DM body:
+
+```
+Will invite 3 of 5 people:
+  Paweł Zieliński          @pawel
+  alice                    @alice
+  bob                      @bob
+
+Not inviting:
+     1  account is deactivated
+     1  is a bot
+```
+
+### Who gets invited
+
+By default, **members of the channels you actually imported** — nobody gets a DM
+because of a channel you chose to leave out. Bots and deactivated accounts are
+never invited, even if named explicitly.
+
+On a terminal it asks: a preset (imported-channel members / posters only /
+everyone / nothing preselected), then a checkbox list showing each person's
+message count and channel count. Non-interactively:
+
+```bash
+slack2buzz invite import.jsonl ... --everyone          # whole export
+slack2buzz invite import.jsonl ... --posters-only      # only people who posted
+slack2buzz invite import.jsonl ... --users alice,bob   # named people only
+slack2buzz invite import.jsonl ... --users-file pilot.txt
+slack2buzz invite import.jsonl ... --exclude-users contractor
+slack2buzz invite import.jsonl ... --list              # candidates, then exit
+```
+
+Same anti-footgun rules as channel selection: an unknown handle is an **error**,
+and every exclusion is reported rather than silently applied. Unlike `parse`,
+there *is* a defensible default here, so a non-interactive run proceeds with
+imported-channel members rather than refusing.
+
+### Things to know before you `--execute`
+
+- **Invite codes are multi-use bearer tokens.** Buzz mints them as stateless
+  HMAC tokens with no recipient binding, no use counter, and no per-code
+  revocation (Buzz's own docs: revocation is "coarse — rotate the relay keypair").
+  Anyone with the link can join. The DM says not to forward it, because that is
+  the only control that exists.
+- **Your Buzz key must be `owner` or `admin`.** A `member` key gets 403 from
+  `POST /api/invites`. This is checked before the first DM, not after the fortieth.
+- **The default TTL here is 14 days, not Buzz's 3.** A bulk invite goes to people
+  who are on holiday; 72 hours kills most of the links unused. Buzz caps it at 30
+  days and `--ttl-days` is clamped with a warning.
+- **Mobile joins are broken upstream** — the link opens the community and hangs on
+  "Connecting…". Invite a small pilot group first; the per-person picker exists
+  partly for this.
+- **The ledger is how nobody gets DMed twice.** A crash mid-run is resumed by
+  re-running the same command. Delete `ledger.sqlite` only if you want everyone
+  re-invited.
+
+Required Slack token scopes: `chat:write` (plus `im:write` on some app configs).
+Notably **not** `users:read.email` — no email address is used anywhere.
 
 ## How it works
 

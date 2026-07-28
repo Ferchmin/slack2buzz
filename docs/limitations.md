@@ -96,6 +96,28 @@ v1 ships `--skip-files` and expects it to be the common path.
   and hangs on "Connecting…", which limits who can be onboarded at all. Relevant
   to `invite` (M5) more than to the archive itself.
 
+## Invites
+
+- **Codes are multi-use bearer tokens with no revocation.** An invite code is a
+  stateless HMAC token (`crates/buzz-relay/src/invite_token.rs`) carrying
+  `{community, role, expiry, nonce}`. It is not bound to a recipient, it is
+  reusable within its TTL, and it cannot be revoked individually — Buzz's own
+  docs describe revocation as "coarse: rotate the relay keypair, or remove the
+  member after the fact". Minting one per person gives correlation in our ledger,
+  not enforcement. Treat each DM as containing a shared secret.
+- **Invites expire, and Buzz caps the TTL at 30 days.** This tool defaults to 14
+  rather than Buzz's 3, but anyone who does not act in time needs a fresh invite.
+- **Minting requires an `owner` or `admin` key.** A `member` key cannot invite.
+- **The candidate list is as stale as the export.** Someone who left after the
+  export was taken still appears active; only accounts already deactivated at
+  export time are filtered. A `users.list` verification pass is not built.
+- **Messages that are only Slack `blocks`** contribute no author signal, so a
+  person whose entire history is app-rendered content may show 0 messages and be
+  missed by `--posters-only`.
+- **`--execute` is not implemented.** The live `chat.postMessage` and
+  NIP-98-signed `POST /api/invites` clients are outstanding; the command refuses
+  rather than silently dry-running.
+
 ## Parsing fidelity
 
 What `parse` knowingly does not preserve:

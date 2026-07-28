@@ -159,6 +159,58 @@ The interactive flow is two steps — a preset, then a checkbox list seeded from
 — because that makes select-all and deselect-all single keystrokes while still
 allowing per-channel toggles.
 
+## Invites
+
+The brief's sketch was `conversations.members` → `users.list` → invite → DM.
+Reading the export and Buzz's invite code changed two things about that.
+
+**Planning needs no Slack API.** `chat.postMessage` accepts a user id directly as
+its `channel`, opening the DM implicitly, and the export already contains channel
+membership and the user table. So there is no `conversations.open`, no
+`users.list`, and no email address anywhere — planning is pure and testable, and
+a token is needed only to send. The cost is staleness: someone who left after the
+export was taken still looks active. The export's own `deleted` flag covers
+anyone deactivated *before* the export, which is the common case; a
+`--verify-directory` pass would close the rest and is not built.
+
+**Invite codes are multi-use bearer tokens**, which changes what per-person
+minting means. Verified in `crates/buzz-relay/src/invite_token.rs`: a code is a
+stateless HMAC token carrying `{c: community, r: "member", e: expires, n: nonce}`,
+not a database row. It is not bound to a recipient, it is multi-use within its
+TTL, and it cannot be revoked individually — Buzz's own module docs say
+revocation is "coarse: rotate the relay keypair, or remove the member after the
+fact", with per-code revocation awaiting a future `relay_invites` table.
+
+So minting one code per person buys **no enforcement**, only an independent nonce
+and the ability to correlate in our own ledger which link went to whom. We still
+do it, because it is cheap and that correlation is the only forensic handle
+available — but the honest consequence is that the DM must tell people not to
+forward the link, since forwarding genuinely does admit strangers.
+
+Two other findings shaped the defaults:
+
+- **Minting requires `owner` or `admin`** (authz mirrors kind:9030). A `member`
+  key gets 403. Checked once, before the first DM, so an under-privileged key
+  fails immediately rather than after forty messages.
+- **Buzz's default TTL is 72 hours**, clamped to `[60s, 30 days]`. That is too
+  short for a bulk invite — DM 200 people on a Friday and most links die unused.
+  This tool asks for 14 days explicitly.
+
+The per-recipient sequence is mint → record `Minted` → send → record `Sent`. The
+record-before-send is deliberate: a crash in between leaves the code in the
+ledger rather than losing it, and only `Sent` marks a person done, so a crash
+before that retries them. `Failed` is deliberately *not* terminal — retrying is
+the point of a ledger — while `Skipped` is, because it reflects an operator
+decision rather than an error.
+
+Both network boundaries are traits (`invite::slack::Messenger`,
+`invite::buzz::Minter`) so the dry-run path and the real path are structurally
+identical code with a different implementation swapped in. A dry run therefore
+exercises the real sequencing and ledger writes, rather than being a separate
+branch that happens to print. The dry-run minter emits deliberately unusable
+codes (`DRY-RUN-NOT-A-REAL-CODE-…`) so nothing in a transcript can be mistaken
+for a real invite and pasted into Slack.
+
 ## Milestones
 
 - **M0 `probe`** — inventory an export; derive which Slack tier it represents.
@@ -169,10 +221,8 @@ allowing per-channel toggles.
   `--skip-reactions`. *Blocked on the timestamp question.*
 - **M3** — threads and reactions.
 - **M4** — files, avatars, custom emoji, partial-failure reporting.
-- **M5 `invite`** — `conversations.members` → `users.list` → Buzz invites → DM
-  each person their link. Depends on nothing else and is the most immediately
-  useful thing here for anyone still deciding; a candidate to ship right after
-  M0.
+- **M5 `invite`** — *planning, selection, dry run and ledger done; live senders
+  outstanding.* See below.
 - **M6 `claim`** — a person joins with their own keypair and publishes one signed
   attestation ("Slack user U024BE7LH is me"); clients render archived messages
   with their real identity, sourced from their own signature. This mirrors Buzz's

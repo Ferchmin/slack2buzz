@@ -34,12 +34,18 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 }
 
 /// Pluralise a count for log lines: `1 message`, `2 messages`.
+///
+/// Handles the few irregular words this tool actually uses rather than
+/// pretending English is regular; anything else gets a bare `s`.
 pub fn plural(n: usize, singular: &str) -> String {
     if n == 1 {
-        format!("{n} {singular}")
-    } else {
-        format!("{n} {singular}s")
+        return format!("{n} {singular}");
     }
+    let plural = match singular {
+        "person" => "people".to_string(),
+        _ => format!("{singular}s"),
+    };
+    format!("{n} {plural}")
 }
 
 #[cfg(test)]
@@ -81,6 +87,12 @@ mod tests {
     fn datetime_includes_utc_time_of_day() {
         assert_eq!(datetime(0), "1970-01-01 00:00");
         assert_eq!(datetime(1_709_545_200), "2024-03-04 09:40");
+    }
+
+    #[test]
+    fn irregular_plurals_are_not_mangled() {
+        assert_eq!(plural(1, "person"), "1 person");
+        assert_eq!(plural(3, "person"), "3 people");
     }
 
     #[test]
