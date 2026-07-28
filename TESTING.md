@@ -8,7 +8,7 @@ just test        # tests only
 just update-golden && git diff tests/golden   # review an intentional IR change
 ```
 
-140 tests. Three layers:
+149 tests. Three layers:
 
 | Layer | Where | What it pins |
 |---|---|---|
@@ -22,7 +22,7 @@ to assert.
 
 ## What is *not* tested, in priority order
 
-Being explicit, because "140 tests passing" invites more confidence than is
+Being explicit, because "149 tests passing" invites more confidence than is
 earned. The fixture is synthetic and written by the same person who wrote the
 parser, so it only covers cases that were imagined.
 
@@ -31,18 +31,19 @@ parser, so it only covers cases that were imagined.
 Everything above runs against `fixtures/basic-export/`, which is hand-written.
 A real export will contain things the fixture does not. Known suspects:
 
-- **`thread_broadcast`** — a thread reply *also* posted to the channel. Currently
-  imported as a plain reply, losing the broadcast flag. Buzz's `build_message`
-  takes a `broadcast` argument and emits `["broadcast", "1"]`, so there is a real
-  mapping being dropped. **This is a known fidelity bug, not just an untested
-  path.**
+- ~~**`thread_broadcast`**~~ — **fixed.** A thread reply also posted to the
+  channel now carries `broadcast: true` through the IR, so `emit` can set Buzz's
+  `broadcast` tag. Both spellings are handled (`reply_broadcast` is the older one
+  and still appears in exports of old history), and the fixture covers it.
 - **`blocks`-only messages.** Slack apps post rich layout in `blocks` with `text`
   empty or a bare fallback. These currently import as empty or near-empty text.
 - **Legacy `attachments`.** Older bot messages put their content there, not in
   `text`. Also dropped.
-- **Subtypes with no handling**: `me_message`, `file_comment`, `channel_name`,
-  `channel_archive`, `pinned_item`, `bot_add`, `reminder_add`, `huddle_thread`.
-  Most are harmless as plain messages; some are noise that should be filtered.
+- **Subtypes now recognised but never seen in a real export**: `me_message`,
+  `file_comment`, `channel_name`, `channel_archive`, `pinned_item`, `bot_add`,
+  `reminder_add`, `huddle_thread` and others are classified as "import as plain
+  text". That claim is untested against reality — some may turn out to be noise
+  worth filtering.
 - **Slack Connect / external members** — `<@U…>` ids absent from `users.json`,
   which fall back to the raw id.
 - **`mpims.json`** (group DMs). `ChannelKind::GroupDm` exists and is unexercised.
@@ -97,10 +98,12 @@ Highest value per hour, and it closes the known bug in §1.
    directory, duplicate `ts`, RTL and emoji display names, an empty
    `channels.json`. Golden-file it. The fixture doubles as documentation of what
    we do with each oddity.
-3. **Report unknown subtypes.** Have `probe` and `parse` count subtypes they have
-   no specific handling for and print them. This converts every future unknown
-   from a silent guess into a visible number — the single highest-leverage change
-   for surviving real exports.
+3. ~~**Report unknown subtypes.**~~ **Done.** `probe` and `parse` classify every
+   message by subtype and count the ones this build does not recognise, printing
+   them with counts. Unrecognised messages are still imported as ordinary text —
+   the point is that you now find out, instead of discovering it by reading the
+   archive. `slack::Handling` makes "recognised" and "unrecognised" distinct
+   states rather than a fallthrough.
 4. **CLI integration tests** (`assert_cmd`): every exit code, `-o -`, the
    non-interactive refusals, and `--execute` leaving no ledger behind.
 5. **A generated large export** (~500k messages) behind `#[ignore]`, with a

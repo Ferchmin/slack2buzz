@@ -51,5 +51,20 @@
     "text": "Nice find ~blaming the linker~ was wrong then",
     "thread_ts": "1709545500.000500",
     "reactions": [{ "name": "thumbsup", "users": ["U0ALICE"], "count": 1 }]
+  },
+  {
+    "type": "message",
+    "subtype": "thread_broadcast",
+    "ts": "1709545680.000750",
+    "user": "U024BE7LH",
+    "text": "Fixed and deployed — flagging here so nobody re-debugs it.",
+    "thread_ts": "1709545500.000500"
+  },
+  {
+    "type": "message",
+    "subtype": "some_future_slack_thing",
+    "ts": "1709545700.000760",
+    "user": "U0ALICE",
+    "text": "A subtype this build has never heard of. Imported, but counted."
   }
 ]

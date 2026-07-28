@@ -20,7 +20,7 @@ use crate::export::Export;
 use crate::ir::{self, ts_to_unix_secs, Record};
 use crate::mrkdwn::{self, Resolver};
 use crate::probe::Inventory;
-use crate::slack::{is_join_leave, SlackMessage};
+use crate::slack::{self, SlackMessage};
 
 /// Knobs that change what ends up in the IR.
 #[derive(Debug, Clone, Default)]
@@ -195,9 +195,17 @@ fn parse_conversation(
     });
 
     for message in messages {
-        if !options.keep_joins && is_join_leave(message.subtype.as_deref()) {
+        let handling = slack::handling(message.subtype.as_deref());
+        if !options.keep_joins && handling == slack::Handling::JoinLeave {
             counts.dropped_joins += 1;
             continue;
+        }
+        // Imported anyway, but counted so the operator learns this build did
+        // not recognise the subtype.
+        if handling == slack::Handling::Unknown {
+            if let Some(subtype) = &message.subtype {
+                *counts.unknown_subtypes.entry(subtype.clone()).or_insert(0) += 1;
+            }
         }
 
         let (Some(slack_ts), Some(created_at)) = (
@@ -228,6 +236,7 @@ fn parse_conversation(
             raw_text,
             thread_ts: message.thread_ts.clone(),
             subtype: message.subtype.clone(),
+            broadcast: handling == slack::Handling::Broadcast,
             edited_at: message
                 .edited
                 .as_ref()
@@ -453,8 +462,69 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(replies.len(), 2);
-        assert_eq!(counts.thread_replies, 2);
+        // Three: two ordinary replies plus the broadcast, which is a reply too.
+        assert_eq!(replies.len(), 3);
+        assert_eq!(counts.thread_replies, 3);
+    }
+
+    /// A `thread_broadcast` reply went to the channel as well as the thread.
+    /// Losing that flag would silently downgrade it to an ordinary reply.
+    #[test]
+    fn a_broadcast_reply_is_flagged_and_still_a_reply() {
+        let (jsonl, _) = run(&Filter::public_only(), &Options::default());
+        let broadcast = records(&jsonl)
+            .into_iter()
+            .filter_map(|r| match r {
+                Record::Message(m) if m.broadcast => Some(m),
+                _ => None,
+            })
+            .next()
+            .expect("the fixture has a thread_broadcast message");
+
+        assert_eq!(broadcast.subtype.as_deref(), Some("thread_broadcast"));
+        assert!(
+            broadcast.is_thread_reply(),
+            "a broadcast is still a reply and must attach to its root"
+        );
+        assert_eq!(broadcast.thread_ts.as_deref(), Some("1709545500.000500"));
+    }
+
+    #[test]
+    fn ordinary_messages_are_not_flagged_as_broadcast() {
+        let (jsonl, _) = run(&Filter::public_only(), &Options::default());
+        let flagged = records(&jsonl)
+            .into_iter()
+            .filter(|r| matches!(r, Record::Message(m) if m.broadcast))
+            .count();
+        assert_eq!(flagged, 1, "exactly the one broadcast in the fixture");
+    }
+
+    /// Unrecognised subtypes are imported, but must be counted so the operator
+    /// can find out. Slack keeps adding subtypes; silence is the failure mode.
+    #[test]
+    fn an_unrecognised_subtype_is_imported_and_counted() {
+        let (jsonl, counts) = run(&Filter::public_only(), &Options::default());
+        assert_eq!(
+            counts.unknown_subtypes.get("some_future_slack_thing"),
+            Some(&1)
+        );
+
+        let imported = records(&jsonl).into_iter().any(|r| {
+            matches!(r, Record::Message(m)
+                if m.subtype.as_deref() == Some("some_future_slack_thing"))
+        });
+        assert!(imported, "counted, but still imported — not dropped");
+    }
+
+    #[test]
+    fn recognised_subtypes_are_not_counted_as_unknown() {
+        let (_, counts) = run(&Filter::public_only(), &Options::default());
+        for known in ["bot_message", "channel_topic", "thread_broadcast"] {
+            assert!(
+                !counts.unknown_subtypes.contains_key(known),
+                "{known} is recognised and must not be reported"
+            );
+        }
     }
 
     #[test]

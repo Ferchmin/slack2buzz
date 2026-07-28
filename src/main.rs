@@ -493,6 +493,24 @@ fn print_inventory(inventory: &probe::Inventory) {
         let _ = writeln!(out);
     }
 
+    let unknown = inventory.unknown_subtypes();
+    if !unknown.is_empty() {
+        let total: usize = unknown.values().sum();
+        let _ = writeln!(
+            out,
+            "Unrecognised message types ({} affected):",
+            fmt::plural(total, "message")
+        );
+        for (subtype, count) in &unknown {
+            let _ = writeln!(out, "  {count:>6}  {subtype}");
+        }
+        let _ = writeln!(
+            out,
+            "  These import as ordinary text. If any of them matter, check a few\n  \
+             against Slack before trusting the archive.\n"
+        );
+    }
+
     if !inventory.warnings.is_empty() {
         let _ = writeln!(out, "Notes:");
         for warning in &inventory.warnings {
@@ -549,6 +567,16 @@ fn print_counts(counts: &slack2buzz::ir::Counts, out: &std::path::Path) {
             "Dropped {} join/leave messages (--keep-joins to keep them).",
             counts.dropped_joins
         );
+    }
+    if !counts.unknown_subtypes.is_empty() {
+        let total: usize = counts.unknown_subtypes.values().sum();
+        eprintln!(
+            "Unrecognised message types ({}), imported as plain text:",
+            fmt::plural(total, "message")
+        );
+        for (subtype, n) in &counts.unknown_subtypes {
+            eprintln!("  {n:>6}  {subtype}");
+        }
     }
     if counts.skipped_unparseable > 0 {
         eprintln!(

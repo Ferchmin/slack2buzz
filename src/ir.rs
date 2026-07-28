@@ -13,6 +13,8 @@
 //! kinds, pubkeys, and signatures are `emit`'s concern. That separation is
 //! what lets a Discord or Teams parser target the same file.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// IR format version. Bump on any breaking change to the record shapes.
@@ -66,6 +68,15 @@ pub struct Counts {
     /// Messages skipped because we could not make sense of them. Non-zero
     /// here is a fidelity loss and `parse` reports it on stderr.
     pub skipped_unparseable: usize,
+    /// Slack `subtype` values this build does not recognise, and how many
+    /// messages carried each.
+    ///
+    /// These messages *are* imported, as ordinary text. The count exists so an
+    /// operator finds out rather than discovering it by reading the archive.
+    /// Slack has added subtypes for years and will add more, so a real export
+    /// is likely to put something here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub unknown_subtypes: BTreeMap<String, usize>,
 }
 
 /// A Slack member. Bots and deleted users are included — their messages are
@@ -177,6 +188,14 @@ pub struct Message {
     /// Slack `subtype` (`channel_topic`, `bot_message`, `file_share`, ...).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subtype: Option<String>,
+    /// This is a thread reply that Slack *also* posted to the channel.
+    ///
+    /// Buzz models the same thing: `buzz_sdk::builders::build_message` takes a
+    /// `broadcast` argument and emits a `["broadcast", "1"]` tag. Without this
+    /// flag the reply would import as an ordinary threaded reply and quietly
+    /// lose the fact that everyone in the channel saw it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub broadcast: bool,
     /// Unix seconds of the last edit, when the message was edited.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edited_at: Option<i64>,
@@ -283,6 +302,7 @@ mod tests {
             raw_text: String::new(),
             thread_ts: thread_ts.map(str::to_string),
             subtype: None,
+            broadcast: false,
             edited_at: None,
             mentions: vec![],
             file_ids: vec![],

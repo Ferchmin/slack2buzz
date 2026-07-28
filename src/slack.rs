@@ -202,6 +202,89 @@ pub fn is_join_leave(subtype: Option<&str>) -> bool {
     subtype.is_some_and(|s| JOIN_LEAVE_SUBTYPES.contains(&s))
 }
 
+/// What we do with a message, decided by its `subtype`.
+///
+/// The point of naming this rather than scattering `match` arms is
+/// [`Handling::Unknown`]. Slack has added subtypes for years and will add more;
+/// without an explicit "we don't recognise this" case, an unfamiliar subtype
+/// silently becomes an ordinary message and nobody finds out until someone
+/// reads the archive and notices something is off. Counting unknowns turns that
+/// into a number `probe` and `parse` can report up front.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Handling {
+    /// No subtype: an ordinary message.
+    Plain,
+    /// Membership churn; dropped unless `--keep-joins`.
+    JoinLeave,
+    /// A thread reply that was *also* posted to the channel. Carries a flag
+    /// through the IR so `emit` can set Buzz's `broadcast` tag.
+    Broadcast,
+    /// Recognised, and correctly imported as an ordinary message. Listed
+    /// explicitly so that "recognised" and "unrecognised" are different states.
+    AsPlainText,
+    /// Not recognised. Imported as an ordinary message *and counted*, so the
+    /// operator learns it happened.
+    Unknown,
+}
+
+/// Slack marks a broadcast reply with one of two subtypes; `reply_broadcast` is
+/// the older spelling and still appears in exports of old history.
+const BROADCAST_SUBTYPES: &[&str] = &["thread_broadcast", "reply_broadcast"];
+
+/// Subtypes that carry ordinary human text and need no special treatment.
+///
+/// Being listed here is a claim that importing the message verbatim is correct,
+/// not merely that we have seen the name before.
+const PLAIN_TEXT_SUBTYPES: &[&str] = &[
+    "bot_message",
+    "me_message",
+    "file_share",
+    "file_comment",
+    "file_mention",
+    "channel_topic",
+    "channel_purpose",
+    "channel_name",
+    "channel_archive",
+    "channel_unarchive",
+    "group_topic",
+    "group_purpose",
+    "group_name",
+    "group_archive",
+    "group_unarchive",
+    "pinned_item",
+    "unpinned_item",
+    "reminder_add",
+    "bot_add",
+    "bot_remove",
+    "bot_enable",
+    "bot_disable",
+    "huddle_thread",
+    "sh_room_created",
+    "tombstone",
+];
+
+/// Classify a message by its subtype.
+pub fn handling(subtype: Option<&str>) -> Handling {
+    let Some(subtype) = subtype else {
+        return Handling::Plain;
+    };
+    if JOIN_LEAVE_SUBTYPES.contains(&subtype) {
+        Handling::JoinLeave
+    } else if BROADCAST_SUBTYPES.contains(&subtype) {
+        Handling::Broadcast
+    } else if PLAIN_TEXT_SUBTYPES.contains(&subtype) {
+        Handling::AsPlainText
+    } else {
+        Handling::Unknown
+    }
+}
+
+/// Whether this message is a thread reply that was also broadcast to the
+/// channel.
+pub fn is_broadcast(subtype: Option<&str>) -> bool {
+    handling(subtype) == Handling::Broadcast
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,6 +339,42 @@ mod tests {
         assert!(is_join_leave(Some("group_leave")));
         assert!(!is_join_leave(Some("bot_message")));
         assert!(!is_join_leave(None));
+    }
+
+    #[test]
+    fn no_subtype_is_a_plain_message() {
+        assert_eq!(handling(None), Handling::Plain);
+    }
+
+    #[test]
+    fn both_spellings_of_broadcast_are_recognised() {
+        // `reply_broadcast` is the older name and still shows up in exports of
+        // old history.
+        assert_eq!(handling(Some("thread_broadcast")), Handling::Broadcast);
+        assert_eq!(handling(Some("reply_broadcast")), Handling::Broadcast);
+        assert!(is_broadcast(Some("thread_broadcast")));
+        assert!(!is_broadcast(Some("bot_message")));
+        assert!(!is_broadcast(None));
+    }
+
+    #[test]
+    fn recognised_text_subtypes_are_not_reported_as_unknown() {
+        for s in ["bot_message", "channel_topic", "me_message", "file_share"] {
+            assert_eq!(handling(Some(s)), Handling::AsPlainText, "{s}");
+        }
+    }
+
+    #[test]
+    fn join_leave_is_classified_before_plain_text() {
+        assert_eq!(handling(Some("channel_join")), Handling::JoinLeave);
+    }
+
+    /// The case this enum exists for: Slack keeps adding subtypes, and an
+    /// unfamiliar one must be visible rather than silently ordinary.
+    #[test]
+    fn an_unfamiliar_subtype_is_unknown() {
+        assert_eq!(handling(Some("some_future_slack_thing")), Handling::Unknown);
+        assert_eq!(handling(Some("")), Handling::Unknown);
     }
 
     #[test]

@@ -15,7 +15,7 @@ use crate::error::Result;
 
 use crate::export::Export;
 use crate::ir::{ts_to_unix_secs, ChannelKind};
-use crate::slack::{is_join_leave, SlackConversation, SlackMessage, SlackUser};
+use crate::slack::{self, SlackConversation, SlackMessage, SlackUser};
 
 /// What tiers of conversation the export turned out to contain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +57,9 @@ pub struct ConversationSummary {
     pub file_count: usize,
     pub dropped_joins: usize,
     pub skipped_unparseable: usize,
+    /// Subtypes this build does not recognise, and how many messages carried
+    /// each. Reported rather than silently imported as ordinary text.
+    pub unknown_subtypes: BTreeMap<String, usize>,
     pub first_ts: Option<i64>,
     pub last_ts: Option<i64>,
 }
@@ -98,6 +101,20 @@ impl Inventory {
             .iter()
             .map(|c| c.thread_reply_count)
             .sum()
+    }
+
+    /// Every unrecognised subtype across the whole export, summed.
+    ///
+    /// This is the number worth looking at before trusting an import: each of
+    /// these messages was imported as ordinary text on a guess.
+    pub fn unknown_subtypes(&self) -> BTreeMap<String, usize> {
+        let mut all: BTreeMap<String, usize> = BTreeMap::new();
+        for c in &self.conversations {
+            for (subtype, n) in &c.unknown_subtypes {
+                *all.entry(subtype.clone()).or_insert(0) += n;
+            }
+        }
+        all
     }
 
     /// Conversations of a given kind.
@@ -179,6 +196,7 @@ pub fn probe(export: &mut Export, keep_joins: bool) -> Result<Inventory> {
                 file_count: 0,
                 dropped_joins: 0,
                 skipped_unparseable: 0,
+                unknown_subtypes: BTreeMap::new(),
                 first_ts: None,
                 last_ts: None,
             };
@@ -263,9 +281,15 @@ fn tally_conversation(
         };
 
         for message in messages {
-            if !keep_joins && is_join_leave(message.subtype.as_deref()) {
+            let handling = slack::handling(message.subtype.as_deref());
+            if !keep_joins && handling == slack::Handling::JoinLeave {
                 summary.dropped_joins += 1;
                 continue;
+            }
+            if handling == slack::Handling::Unknown {
+                if let Some(subtype) = &message.subtype {
+                    *summary.unknown_subtypes.entry(subtype.clone()).or_insert(0) += 1;
+                }
             }
             let Some(ts) = message.ts.as_deref().and_then(ts_to_unix_secs) else {
                 summary.skipped_unparseable += 1;
