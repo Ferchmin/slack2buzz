@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 /// An opened Slack export.
+#[derive(Debug)]
 pub enum Export {
     Dir {
         root: PathBuf,
